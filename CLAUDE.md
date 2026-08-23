@@ -5,21 +5,28 @@ reproduce notas de lira/arpa pregrabadas como wavetables en flash, con
 polifonía de 15 voces. Salida de audio vía I2S a un DAC PCM5102.
 
 Este archivo resume las decisiones de diseño ya tomadas para que una
-sesión futura no tenga que re-derivarlas. El detalle del pipeline que
-genera las muestras de audio está en [docs/](docs/README.md) — no lo
-dupliques acá, referencialo.
+sesión futura no tenga que re-derivarlas. El detalle está en `docs/`
+(índice en [README.md](README.md)) — no lo dupliques acá, referencialo.
 
 ## Estado actual
 
 - **Hecho:** selección de escala/notas, obtención y procesamiento de las
   15 muestras de audio (`tools/generate_samples.py` → `tools/notes_data.h`).
-  Primera versión (debug) del firmware en `src/main.cpp` (PlatformIO +
-  Arduino): I2S al PCM5102, lectura con pull-up interna y mezcla aditiva de
-  las 5 cuerdas láser sobre el banco central de notas — ver
-  [docs/04-firmware-primera-version.md](docs/04-firmware-primera-version.md).
-- **Falta:** cablear los 2 botones de banco (octava +/−) en el firmware —
-  el catálogo de 15 notas y el array de voces ya están preparados para
-  eso, solo falta disparar los índices de los bancos grave/agudo.
+  Firmware **funcionando y probado en hardware real** — ver
+  [docs/04-firmware-primera-version.md](docs/04-firmware-primera-version.md):
+  - I2S al PCM5102, mezcla aditiva de 15 voces, todo en una tarea de
+    FreeRTOS fijada al core 0.
+  - Disparo de notas por 3 vías: las 5 cuerdas láser (GPIO con pull-up
+    interna, banco central), y cualquiera de las 15 notas por caracter
+    recibido en UART0 (USB) o UART2 (enlace con un Arduino Pro Micro).
+  - Melodía de prueba con ritmo al recibir `' '` (módulo aparte,
+    `src/melody.h` — ver
+    [docs/05-melodias-de-prueba.md](docs/05-melodias-de-prueba.md)).
+  - Tono keep-alive de 20 Hz para parlantes amplificados con auto-standby.
+- **Falta:** los 2 botones de banco (octava +/−) no están cableados como
+  GPIO en el ESP32. Con el UART ya funcionando, esa lógica puede resolverse
+  del lado del Pro Micro (que mandaría el índice absoluto 0-14) en vez de
+  sumar entradas al ESP32.
 - **Pendiente:** confirmar con el autor de la librería "Lyre Lyre"
   (`jscomposition.nz@gmail.com`) si su licencia permite incrustar las
   muestras en el firmware de un producto distribuido/vendido (ver
@@ -30,11 +37,15 @@ dupliques acá, referencialo.
 
 ## Hardware
 
-- **MCU:** ESP32, 4 MB de flash.
-- **DAC:** PCM5102, conectado por **I2S**.
-- **Reproducción:** un timer con período igual al intervalo de muestreo
-  incrementa un puntero de posición por voz activa, lee la muestra
-  correspondiente de flash y la escribe al registro de salida I2S.
+- **MCU:** ESP32-WROVER (D0WDQ6), 4 MB de flash.
+- **DAC:** PCM5102, conectado por **I2S**. Ojo con el módulo: `SCK` va a
+  **GND** (habilita el PLL interno; flotando causa errores de reloj) y
+  `XSMT` en alto (si no, salida muteada). Pinout completo en
+  [docs/04-firmware-primera-version.md](docs/04-firmware-primera-version.md).
+- **Reproducción:** *(el diseño original preveía un timer por muestra; en la
+  implementación real no hizo falta)*. Se mezcla por bloques de 256 frames y
+  se escribe con `i2s_write()`, que bloquea hasta que la DMA tiene lugar —
+  eso marca el ritmo real de 22050 sps sin ningún timer aparte.
 
 ## Formato de audio
 
@@ -50,9 +61,11 @@ dupliques acá, referencialo.
   (no hay una ganancia común entre las 15 notas — ver
   [docs/01-obtencion-de-notas.md](docs/01-obtencion-de-notas.md)).
 
-## Polifonía (diseño, no implementado aún)
+## Polifonía (implementado en `mix_block()`)
 
-- **15 voces simultáneas.**
+- **15 voces simultáneas**, un slot fijo por nota del catálogo. Como el slot
+  es fijo, volver a disparar una nota que ya suena la **reinicia desde el
+  ataque** (política de retrigger) en vez de superponerla.
 - **Acumulador de mezcla: 32 bits con signo**, no 16. En el ESP32 (Xtensa,
   registros de 32 bits) leer un `int16_t` y sumarlo a un acumulador de
   32 bits no cuesta ciclos extra frente a usar un acumulador de 16 bits
@@ -94,3 +107,28 @@ Para regenerar tras cambiar fuente/duraciones/umbrales:
 ```bash
 python tools/generate_samples.py
 ```
+
+## ⚠️ Archivos duplicados
+
+El proyecto soporta **dos entornos de build** (PlatformIO y Arduino IDE), y
+eso obliga a mantener tres pares de archivos duplicados **a mano** — no hay
+symlinks ni automatización, si se edita uno hay que copiar el cambio al otro:
+
+| PlatformIO | Arduino IDE |
+|---|---|
+| `src/main.cpp` | `src/soundcard/soundcard.ino` |
+| `src/melody.h` | `src/soundcard/melody.h` |
+| `tools/notes_data.h` | `src/soundcard/notes_data.h` |
+
+Verificar con:
+
+```bash
+diff src/main.cpp src/soundcard/soundcard.ino && diff src/melody.h src/soundcard/melody.h && diff tools/notes_data.h src/soundcard/notes_data.h
+```
+
+El build real que viene usando el autor es el del **Arduino IDE**, con
+`Tools → Partition Scheme = Huge APP (3MB No OTA)` — sin eso falla con
+`Sketch too big` (el binario pesa ~1.9 MB por los datos de audio).
+
+Detalle de por qué existe esta duplicación en
+[docs/04-firmware-primera-version.md](docs/04-firmware-primera-version.md).

@@ -20,6 +20,9 @@ reales. El proceso de **sintesis polifónica** es documentado en `docs/`:
 - [04 - Firmware, primera versión](docs/04-firmware-primera-version.md):
   framework, pinout, partition scheme y arquitectura de mezcla de la primera
   versión (debug) del firmware en `src/main.cpp`.
+- [05 - Melodías de prueba](docs/05-melodias-de-prueba.md): qué melodías
+  entran (y cuáles no) en la escala pentatónica, con las secuencias de
+  caracteres para tocarlas por el puerto serie.
 
 Todo lo descripto ahí lo produce un único script:
 [`tools/generate_samples.py`](tools/generate_samples.py). La selección de duración

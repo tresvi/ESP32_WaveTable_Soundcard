@@ -4,15 +4,18 @@
 // banco central (C4 D4 E4 G4 A4) por wavetable, mezcladas aditivamente y
 // enviadas por I2S al PCM5102. Ademas, cada caracter recibido por UART0
 // (Serial, USB) o UART2 (Serial2, enlace con el Pro Micro) dispara directo
-// cualquiera de las 15 notas del catalogo completo (ver uart_poll()). Los 2
-// botones de banco (octava +/-) todavia no estan cableados en esta version.
+// cualquiera de las 15 notas del catalogo completo, y el espacio ' ' reproduce
+// una melodia de prueba (ver uart_poll() y melody_tick()). Los 2 botones de
+// banco (octava +/-) todavia no estan cableados en esta version.
 //
 // Detalle de decisiones de diseno (pinout, partition scheme, politica de
 // retrigger, etc.) en docs/04-firmware-primera-version.md.
 
 #include <Arduino.h>
 #include <driver/i2s.h>
+#include <math.h>
 #include "notes_data.h"
+#include "melody.h"
 
 // ---------------------------------------------------------------------------
 // Pinout
@@ -72,11 +75,48 @@ static void trigger_note(uint8_t note_index) {
     Serial.printf("trigger note_index=%u\n", note_index);
 }
 
+// ---------------------------------------------------------------------------
+// Keep-alive para amplificadores con auto-standby
+// ---------------------------------------------------------------------------
+
+// Muchos parlantes amplificados cortan la etapa de salida tras unos segundos
+// de silencio y tardan 100-500 ms en despertar, comiendose el ataque de la
+// primera nota. Este tono continuo de baja frecuencia mantiene despierto al
+// detector de senal del amplificador.
+//
+// Se usa frecuencia BAJA y no alta a proposito: a 22050 sps el maximo posible
+// es ~11 kHz, claramente audible. A 20 Hz en cambio estamos en el borde
+// inferior de la audicion humana y un parlante chico casi no puede
+// reproducirlo acusticamente, mientras que el detector del amplificador -que
+// mide amplitud electrica, no sonido- lo sigue viendo.
+//
+// El tono suena siempre (no solo en silencio) para no generar clicks al
+// entrar/salir. Subir KEEPALIVE_AMPLITUDE de a poco hasta que el amplificador
+// deje de entrar en standby; 0 desactiva el keep-alive por completo.
+// Valores ajustados a oido sobre el hardware real (ver docs/04).
+static const int16_t KEEPALIVE_AMPLITUDE = 60;
+static const uint32_t KEEPALIVE_HZ = 20;
+static const size_t KEEPALIVE_TABLE_LEN = 256;
+
+static int16_t keepalive_table[KEEPALIVE_TABLE_LEN];
+static uint32_t keepalive_phase = 0;
+static uint32_t keepalive_increment = 0;
+
+static void keepalive_init() {
+    for (size_t i = 0; i < KEEPALIVE_TABLE_LEN; i++) {
+        float angle = 6.283185307f * (float)i / (float)KEEPALIVE_TABLE_LEN;
+        keepalive_table[i] = (int16_t)(sinf(angle) * (float)KEEPALIVE_AMPLITUDE);
+    }
+    // Acumulador de fase de 32 bits: los 8 bits altos indexan la tabla.
+    keepalive_increment = (uint32_t)(((uint64_t)KEEPALIVE_HZ << 32) / SAMPLE_RATE);
+}
+
 // Suma todas las voces activas en un acumulador de 32 bits y satura a 16
 // antes de escribir el frame estereo (mismo dato en L y R).
 static void mix_block(int16_t *stereo_out, size_t frames) {
     for (size_t i = 0; i < frames; i++) {
-        int32_t acc = 0;
+        int32_t acc = keepalive_table[keepalive_phase >> 24];
+        keepalive_phase += keepalive_increment;
         for (uint8_t vi = 0; vi < NOTE_COUNT; vi++) {
             Voice &v = voices[vi];
             if (!v.active) {
@@ -143,10 +183,15 @@ static void strings_poll() {
 // ---------------------------------------------------------------------------
 
 // Cada caracter recibido dispara una nota, mapeo directo a notas[0..14]:
-// '0'-'9' -> notas[0..9], 'A'-'E' -> notas[10..14]. Un byte = un trigger, sin
-// framing de linea. Caracteres fuera de ese set se ignoran silenciosamente
-// (protege contra basura electrica en la linea, ver docs/04).
+// '0'-'9' -> notas[0..9], 'A'-'E' -> notas[10..14]. El espacio ' ' arranca la
+// melodia de prueba. Un byte = un trigger, sin framing de linea. Caracteres
+// fuera de ese set se ignoran silenciosamente (protege contra basura
+// electrica en la linea, ver docs/04).
 static void process_uart_char(char c) {
+    if (c == ' ') {
+        melody_start();
+        return;
+    }
     int8_t note_index = -1;
     if (c >= '0' && c <= '9') {
         note_index = c - '0';
@@ -215,6 +260,7 @@ static void audio_task(void *arg) {
     for (;;) {
         strings_poll();
         uart_poll();
+        melody_tick(BLOCK_FRAMES);
         mix_block(block, BLOCK_FRAMES);
         size_t written = 0;
         i2s_write(I2S_PORT, block, sizeof(block), &written, portMAX_DELAY);
@@ -224,6 +270,8 @@ static void audio_task(void *arg) {
 void setup() {
     Serial.begin(115200);
     strings_init();
+    keepalive_init();
+    melody_init(trigger_note, SAMPLE_RATE);
     i2s_setup();
     Serial2.begin(UART_BAUD, SERIAL_8N1, UART_RX_PIN, -1);
     xTaskCreatePinnedToCore(audio_task, "audio_task", 4096, NULL, 2, NULL, 0);

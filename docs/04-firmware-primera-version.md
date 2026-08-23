@@ -54,11 +54,29 @@ automáticamente ahí, porque son mecanismos exclusivos de PlatformIO:
   confirmar `Tools → Flash Size = 4MB`.
 - **`-I tools`**: el Arduino IDE no soporta include paths custom sin tocar
   `platform.local.txt`. Por eso `tools/notes_data.h` está **copiado** a
-  `src/soundcard/notes_data.h` — es una segunda copia, no un symlink. Si se
-  regenera `tools/notes_data.h` (corriendo de nuevo
-  `tools/generate_samples.py`), hay que volver a copiarlo manualmente a
-  `src/soundcard/` para que el sketch de Arduino IDE quede sincronizado; si
-  no, van a divergir en silencio.
+  `src/soundcard/notes_data.h` — es una segunda copia, no un symlink.
+
+### ⚠️ Archivos duplicados que hay que mantener sincronizados
+
+Como consecuencia de soportar los dos entornos de build, hay tres pares de
+archivos duplicados. **No hay symlinks ni automatización: si se edita uno hay
+que copiar el cambio al otro a mano, o divergen en silencio.**
+
+| PlatformIO | Arduino IDE | Origen |
+|---|---|---|
+| `src/main.cpp` | `src/soundcard/soundcard.ino` | mismo código, sólo cambia la extensión |
+| `src/melody.h` | `src/soundcard/melody.h` | copia idéntica |
+| `tools/notes_data.h` | `src/soundcard/notes_data.h` | generado por `tools/generate_samples.py` |
+
+Para verificar que no divergieron:
+
+```bash
+diff src/main.cpp src/soundcard/soundcard.ino && diff src/melody.h src/soundcard/melody.h && diff tools/notes_data.h src/soundcard/notes_data.h
+```
+
+En particular, después de regenerar las muestras (`python
+tools/generate_samples.py`) hay que volver a copiar `tools/notes_data.h` a
+`src/soundcard/`.
 
 `tools/notes_data.h` se referencia directo con `-I tools` en `build_flags`
 de `platformio.ini` (para el build de PlatformIO), en vez de copiarlo a `src/`, para que siga habiendo una
@@ -132,6 +150,70 @@ escribirla al frame estéreo I2S (mismo valor en L y R) — exactamente el
 esquema descripto en `CLAUDE.md` (acumulador de 32 bits, saturación a 16
 antes de I2S).
 
+## Keep-alive del amplificador (tono de 20 Hz)
+
+Síntoma observado en hardware: al disparar una nota **con el sistema en
+silencio**, no se escuchaba el ataque — la nota parecía empezar por la mitad.
+Con otra nota ya sonando, el ataque salía limpio.
+
+**No era un problema del firmware ni del DAC.** Se descartaron por orden:
+
+1. *Bug de reproducción*: `trigger_note()` siempre resetea `pos = 0` y ese
+   mismo bloque ya contiene la nota desde la muestra 0. Además el reloj I2S
+   nunca se detiene (`audio_task` escribe bloques de silencio
+   continuamente), así que no hay "arranque en frío" del stream.
+2. *Auto-mute del PCM5102A por ceros digitales*: se probó agregar un dither
+   de ±1 LSB para que el stream nunca fuera cero puro. **No cambió nada**,
+   lo que descartó esta hipótesis (y el dither se removió).
+3. *`SCK` flotante* (fuera de spec, se corrigió igual atándolo a GND).
+4. **Causa real**: el parlante amplificado usado para probar tiene
+   **auto-standby** — corta su etapa de salida tras unos segundos de
+   silencio y tarda 100-500 ms en despertar, comiéndose el transitorio de
+   ataque. Confirmado escuchando con auriculares pasivos directo al jack del
+   PCM5102: ahí el ataque aparece completo.
+
+### Solución
+
+Un tono senoidal continuo de **20 Hz** sumado a la mezcla (`keepalive_init()`
++ el término inicial de `acc` en `mix_block()`), que mantiene despierto al
+detector de señal del amplificador.
+
+La asimetría que hace que esto funcione sin ser molesto: el detector del
+amplificador mide **amplitud eléctrica**, mientras que lo que molestaría es
+el **sonido acústico** — y a 20 Hz (el borde inferior de la audición humana)
+un parlante chico es muy ineficiente (no mueve aire suficiente) y el oído es
+muchísimo menos sensible (curvas de Fletcher-Munson). El amplificador "ve" la
+señal; el usuario casi no la escucha.
+
+Detalles de la implementación:
+
+- **Frecuencia baja, no alta**: a 22050 Hz de tasa de muestreo el máximo
+  posible es ~11 kHz (Nyquist), que es claramente audible y molesto. Para
+  que un tono agudo fuera inaudible haría falta 17-18 kHz, imposible sin
+  rehacer todos los wavetables a mayor tasa de muestreo.
+- **Suena siempre**, no solo durante los silencios, para no generar clicks
+  al entrar/salir del tono.
+- Tabla de 256 muestras generada en `setup()` + acumulador de fase de 32
+  bits (los 8 bits altos indexan la tabla) — sin `sinf()` en el camino
+  crítico de audio.
+- `KEEPALIVE_AMPLITUDE` (sobre el pico de ±2048 por nota) es el valor a
+  tunear: subirlo de a poco hasta que el amplificador deje de entrar en
+  standby. **`0` desactiva el keep-alive por completo.**
+- **Valores actuales: 20 Hz / amplitud 60**, ajustados a oído sobre el
+  hardware real. La primera versión funcional fue 40 Hz / 120; bajar a la
+  mitad ambos parámetros siguió manteniendo despierto al amplificador y
+  redujo todavía más el riesgo de que el tono se perciba. Son específicos
+  del parlante usado: con otro amplificador probablemente haya que
+  recalibrarlos (o desactivarlo, ver abajo).
+
+### Cuándo desactivarlo
+
+Es un *workaround* para el parlante de prueba, no una necesidad del diseño.
+Para el producto final conviene elegir un módulo amplificador **sin
+auto-standby** (los class-D típicos tipo PAM8403 / TPA311x son always-on) y
+poner `KEEPALIVE_AMPLITUDE = 0` — así no se gasta headroom de mezcla ni se
+mete una señal que no aporta nada musicalmente.
+
 ## Entrada por UART (Pro Micro)
 
 Además de las 5 cuerdas, cualquiera de las 15 notas del catálogo completo se
@@ -143,7 +225,9 @@ cablear botones físicos en el ESP32).
 - **Protocolo**: un byte = un disparo, sin framing de línea. `'0'`-`'9'` →
   `notas[0..9]`, `'A'`-`'E'` → `notas[10..14]` — mapeo directo al mismo
   índice fijo de `notes[15]` (`banco_octava * 5 + cuerda`) que ya usan las
-  cuerdas. Cualquier otro caracter se descarta en silencio (`uart_poll()`).
+  cuerdas. El **espacio** `' '` reproduce una melodía de prueba completa con
+  su ritmo (ver [05](05-melodias-de-prueba.md)). Cualquier otro caracter se
+  descarta en silencio (`uart_poll()`).
   No hace falta debounce del lado del ESP32: a diferencia de una entrada
   digital mecánica/óptica, UART no "rebota" — el único riesgo es basura
   eléctrica, y el filtro de caracteres válidos ya la absorbe (ver más abajo).
