@@ -39,7 +39,7 @@ static const gpio_num_t I2S_DOUT_PIN = GPIO_NUM_26;
 // este pin, ver docs/04). Solo RX: el ESP32 no le contesta nada al Pro Micro
 // en esta version.
 static const gpio_num_t UART_RX_PIN = GPIO_NUM_21;
-static const uint32_t UART_BAUD = 115200;  // debe coincidir con Serial1.begin() del Pro Micro
+static const uint32_t UART_BAUD = 57600;  // debe coincidir con Serial1.begin() del Pro Micro
 
 // ---------------------------------------------------------------------------
 // Audio / mezcla

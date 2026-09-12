@@ -118,13 +118,22 @@ symlinks ni automatización, si se edita uno hay que copiar el cambio al otro:
 |---|---|
 | `src/main.cpp` | `src/soundcard/soundcard.ino` |
 | `src/melody.h` | `src/soundcard/melody.h` |
-| `tools/notes_data.h` | `src/soundcard/notes_data.h` |
+| `tools/notes_data.h` | `src/soundcard/notes_data_greek_lyra.h` |
+
+Ojo con el tercer par: el generador emite `tools/notes_data.h` con nombre
+genérico, pero la copia del sketch se llama **`notes_data_greek_lyra.h`**
+(el nombre identifica el set de muestras — lira griega de "Lyre Lyre"). Al
+regenerar hay que copiar **y renombrar**. Los dos `.ino`/`.cpp` incluyen
+nombres distintos por eso mismo.
 
 Verificar con:
 
 ```bash
-diff src/main.cpp src/soundcard/soundcard.ino && diff src/melody.h src/soundcard/melody.h && diff tools/notes_data.h src/soundcard/notes_data.h
+diff src/main.cpp src/soundcard/soundcard.ino; diff src/melody.h src/soundcard/melody.h && diff tools/notes_data.h src/soundcard/notes_data_greek_lyra.h
 ```
+
+(el primer `diff` va a mostrar exactamente una línea distinta — el
+`#include` — y las dos líneas de prueba en `setup()`; eso es lo esperado.)
 
 El build real que viene usando el autor es el del **Arduino IDE**, con
 `Tools → Partition Scheme = Huge APP (3MB No OTA)` — sin eso falla con

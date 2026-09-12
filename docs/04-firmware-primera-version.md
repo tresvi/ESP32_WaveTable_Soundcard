@@ -54,7 +54,8 @@ automáticamente ahí, porque son mecanismos exclusivos de PlatformIO:
   confirmar `Tools → Flash Size = 4MB`.
 - **`-I tools`**: el Arduino IDE no soporta include paths custom sin tocar
   `platform.local.txt`. Por eso `tools/notes_data.h` está **copiado** a
-  `src/soundcard/notes_data.h` — es una segunda copia, no un symlink.
+  `src/soundcard/notes_data_greek_lyra.h` — es una segunda copia, no un
+  symlink.
 
 ### ⚠️ Archivos duplicados que hay que mantener sincronizados
 
@@ -64,19 +65,28 @@ que copiar el cambio al otro a mano, o divergen en silencio.**
 
 | PlatformIO | Arduino IDE | Origen |
 |---|---|---|
-| `src/main.cpp` | `src/soundcard/soundcard.ino` | mismo código, sólo cambia la extensión |
+| `src/main.cpp` | `src/soundcard/soundcard.ino` | mismo código; difieren sólo en el `#include` de las muestras y en dos líneas de prueba en `setup()` |
 | `src/melody.h` | `src/soundcard/melody.h` | copia idéntica |
-| `tools/notes_data.h` | `src/soundcard/notes_data.h` | generado por `tools/generate_samples.py` |
+| `tools/notes_data.h` | `src/soundcard/notes_data_greek_lyra.h` | generado por `tools/generate_samples.py`; **la copia del sketch lleva el nombre del set de muestras** |
+
+Sobre el tercer par: el generador emite siempre `tools/notes_data.h` con
+nombre genérico, pero en el sketch la copia se llama
+`notes_data_greek_lyra.h` para identificar de qué instrumento son las
+muestras (lira griega, librería "Lyre Lyre" — ver
+[01](01-obtencion-de-notas.md)). Eso deja el nombre libre para eventuales
+sets alternativos (por ejemplo si hubiera que reemplazar la fuente por una
+con licencia explícita). Consecuencia práctica: al regenerar hay que copiar
+**y renombrar**, no sólo copiar.
 
 Para verificar que no divergieron:
 
 ```bash
-diff src/main.cpp src/soundcard/soundcard.ino && diff src/melody.h src/soundcard/melody.h && diff tools/notes_data.h src/soundcard/notes_data.h
+diff src/main.cpp src/soundcard/soundcard.ino; diff src/melody.h src/soundcard/melody.h && diff tools/notes_data.h src/soundcard/notes_data_greek_lyra.h
 ```
 
-En particular, después de regenerar las muestras (`python
-tools/generate_samples.py`) hay que volver a copiar `tools/notes_data.h` a
-`src/soundcard/`.
+El primer `diff` debe mostrar exactamente tres líneas distintas (el
+`#include` y las dos de prueba); cualquier otra diferencia es una
+desincronización real.
 
 `tools/notes_data.h` se referencia directo con `-I tools` en `build_flags`
 de `platformio.ini` (para el build de PlatformIO), en vez de copiarlo a `src/`, para que siga habiendo una
@@ -112,6 +122,35 @@ Se evitó deliberadamente:
 - **GPIO 34–39**: son solo de entrada y **no tienen pull-up/pull-down
   interna** — no sirven para las cuerdas, que necesitan `INPUT_PULLUP` por
   requisito del enunciado.
+
+### Configuración del módulo PCM5102
+
+El módulo usado es el breakout genérico (violeta, con jack de 3,5 mm) que
+expone `SCK/BCK/DIN/LCK/GND/VIN` en un header y trae **cuatro jumpers de
+soldadura** en la cara inferior (`H`/`L` por cada uno). Cableado hacia el
+ESP32:
+
+| Pin del módulo | Va a | Motivo |
+|---|---|---|
+| `BCK` | GPIO 27 | bit clock I2S |
+| `LCK` | GPIO 25 | word select / LRCK |
+| `DIN` | GPIO 26 | datos (el ESP32 transmite) |
+| `VIN` | 3V3 | mismos niveles lógicos que el ESP32; no usar 5V |
+| `GND` | GND | — |
+| **`SCK`** | **GND** | *system clock*. El firmware **no genera MCLK**; con `SCK` a GND el chip usa su PLL interno derivando todo de `BCK`. **Flotando** el detector de reloj capta ruido y el chip entra/sale de error de reloj muteando la salida — se probó en hardware y es fuente real de fallas |
+
+Jumpers de la cara inferior, con la posición que corresponde a este
+firmware:
+
+| Jumper | Posición | Por qué |
+|---|---|---|
+| **`FMT`** | **L** | `L` = I2S estándar, que es lo configurado (`I2S_COMM_FORMAT_STAND_I2S`). En `H` el chip espera Left-Justified y suena distorsionado/corrido |
+| **`XSMT`** | **H** | Soft-mute. `L` = salida muteada, silencio total. Es **el primer sospechoso** ante un "no suena" con todo lo demás bien |
+| **`DEMP`** | **L** | De-énfasis (para CDs con pre-énfasis a 44,1 kHz). Las muestras no lo tienen; en `H` colorea el sonido |
+| **`FLT`** | **L** | Filtro digital de latencia normal. El más inofensivo; `L` es lo estándar |
+
+Para verificar sin resoldar: multímetro en continuidad entre cada pin de
+control y `A3V3` (→ está en `H`) o `AGND` (→ está en `L`).
 
 ## Lectura de las cuerdas
 
@@ -231,6 +270,13 @@ cablear botones físicos en el ESP32).
   No hace falta debounce del lado del ESP32: a diferencia de una entrada
   digital mecánica/óptica, UART no "rebota" — el único riesgo es basura
   eléctrica, y el filtro de caracteres válidos ya la absorbe (ver más abajo).
+- **Baudrate: 57600** (`UART_BAUD`), y tiene que coincidir con el
+  `Serial1.begin()` del Pro Micro. La primera versión usaba 115200; se bajó
+  a 57600 en el commit `ecb8d3d`. **El motivo del cambio no quedó
+  registrado** — si fue por fallas a 115200 a través del divisor resistivo
+  (plausible: el divisor más la capacidad del pin forman un RC que redondea
+  los flancos), conviene anotarlo acá, porque condiciona hasta dónde se
+  puede subir el baudrate en el futuro.
 - **Puerto**: los comandos se aceptan por **dos** UARTs a la vez —
   `Serial2` (UART2, RX en **GPIO 21**, el enlace real con el Pro Micro) y
   también `Serial` (UART0, el mismo puerto USB que ya se usa para
@@ -283,11 +329,28 @@ estrategia) sin riesgo de interferir con la mezcla/I2S.
   pueden disparar ya mismo por UART (cualquier índice 0-14), pero no hay
   entradas físicas dedicadas en el ESP32 para ellos — la decisión de qué
   banco corresponde queda del lado del Pro Micro.
-- **Latencia no optimizada**: ~46 ms de buffer DMA más el polling por
-  bloque (~12 ms) dan un margen pulsación→sonido notable para un
-  instrumento gestual. Aceptable para esta etapa de debug; si se percibe
-  lento al probar en hardware, ajustar `dma_buf_count`/`dma_buf_len` es el
-  primer lugar para mirar.
+- **Latencia no optimizada: hasta ~70 ms** entre pulsar una cuerda y que
+  suene, en el peor caso. No es "un bloque" (11,6 ms) — hay dos factores
+  que lo multiplican, cada uno hasta 3 bloques:
+  1. *Detección + debounce (hasta 3 × 11,6 ≈ 35 ms)*. `strings_poll()`
+     corre una vez por bloque, y el debounce de 15 ms se evalúa en esos
+     chequeos discretos. Peor caso: el pulso cae justo después de un
+     chequeo (+1 bloque hasta detectarlo), el siguiente chequeo lleva
+     11,6 ms de estable (< 15, no confirma), y recién el tercero llega a
+     23,2 ms ≥ 15 y dispara. Este multiplicador depende de la relación
+     `DEBOUNCE_MS` / período de bloque: con 15 ms y 11,6 ms son 3 bloques.
+  2. *Cola DMA (hasta 3 × 11,6 ≈ 35 ms)*. `i2s_write()` no espera a que el
+     bloque *suene*, sólo a que haya un slot libre. Como `mix_block()`
+     calcula en microsegundos, en régimen la cola de `dma_buf_count = 4`
+     está siempre llena: el bloque recién calculado entra **detrás de 3
+     bloques ya encolados** que tienen que sonar primero.
+
+  Las notas por UART se ahorran el factor 1 (no hay debounce) y quedan en
+  ~35 ms. Para bajar la latencia real, las palancas son `DEBOUNCE_MS`
+  (menos → más sensible a ruido), `BLOCK_FRAMES` (menos → períodos más
+  cortos pero más overhead de CPU) y `dma_buf_count` (menos → menos colchón,
+  más riesgo de underrun). Aceptable para esta etapa; a revisar si al tocar
+  se percibe lento.
 - **Debounce simple por polling**, no por interrupción — suficiente para
   validar el instrumento en el banco, a revisar si en la placa final los
   sensores láser resultan más ruidosos de lo esperado.

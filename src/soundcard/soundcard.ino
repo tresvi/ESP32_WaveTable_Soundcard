@@ -14,7 +14,7 @@
 #include <Arduino.h>
 #include <driver/i2s.h>
 #include <math.h>
-#include "notes_data.h"
+#include "notes_data_greek_lyra.h"
 #include "melody.h"
 
 // ---------------------------------------------------------------------------
