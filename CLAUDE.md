@@ -108,6 +108,13 @@ Para regenerar tras cambiar fuente/duraciones/umbrales:
 python tools/generate_samples.py
 ```
 
+Si se cambia la **fuente** de muestras, antes hay que verificar el tono real
+de los archivos nuevos (los nombres no son confiables) con
+`python tools/detect_pitch.py <carpeta>` — ver
+[docs/01-obtencion-de-notas.md](docs/01-obtencion-de-notas.md). La librería
+actual ("Lyre Lyre") es cromática de G3 a C5, más de lo que la pentatónica
+usa.
+
 ## ⚠️ Archivos duplicados
 
 El proyecto soporta **dos entornos de build** (PlatformIO y Arduino IDE), y

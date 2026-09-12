@@ -58,9 +58,14 @@ Los archivos de "Lyre Lyre" **no traen el número de octava en el nombre**
 (solo `<Nota> <intensidad>.<toma>.wav`, por ejemplo `C medium.9.wav`, y un
 segundo grupo con prefijo `8 ` como `8 C medium.8.wav`). En vez de asumir la
 octava por el nombre, se verificó el tono real de cada archivo con un
-detector de pitch por autocorrelación (Python: `numpy` + `scipy` +
-`soundfile`, sobre una ventana de ~0.4 s del sostenido de la nota,
-ignorando el ataque inicial).
+detector de pitch por autocorrelación (Python: `numpy` + `soundfile`, sobre
+una ventana de ~0.4 s del sostenido de la nota, ignorando el ataque
+inicial). El script está en el repo como
+[`tools/detect_pitch.py`](../tools/detect_pitch.py):
+
+```bash
+python tools/detect_pitch.py "<carpeta o archivo.wav>" [--filter "*medium*"]
+```
 
 Resultado verificado:
 
@@ -77,6 +82,25 @@ prefijo del mismo nombre", pero **no está disponible para todas las
 letras** (falta para D y E), y tampoco hay nada por debajo de la octava 3
 ni por encima de la octava 5. De las 15 notas necesarias, la librería cubre
 **8 directamente**; las otras 7 se derivan (ver abajo).
+
+### Cobertura completa de la librería
+
+La tabla de arriba sólo lista las 5 letras de la pentatónica, porque era lo
+único que se buscó en su momento. Un barrido posterior con
+`detect_pitch.py` sobre toda la capa `medium` mostró que la librería es en
+realidad **cromática y continua de G3 a C5** (18 semitonos, confianza 1.00
+en todos, desviaciones dentro de ±16 cents):
+
+| Sin prefijo | G3 G#3 A3 A#3 B3 C4 C#4 D4 D#4 E4 F4 F#4 |
+|---|---|
+| Con prefijo `8 ` | G4 G#4 A4 A#4 B4 C5 |
+
+Consecuencia relevante: **F4 y B4 existen como grabaciones directas**, así
+que si en algún momento se quisiera una escala diatónica de 7 notas en la
+octava central (C4–B4), no haría falta ningún resampleo para ese banco —
+sólo F3 y F5/B5 requerirían derivación por octava. Ver la discusión del
+trade-off pentatónica vs. heptatónica en
+[05](05-melodias-de-prueba.md).
 
 El mismo método se usó primero sobre `KSHarp` para confirmar que su
 numeración de octava sigue la convención estándar (A4 = 440 Hz), antes de
@@ -145,14 +169,24 @@ Definido en conversaciones previas de diseño del firmware:
   44100 Hz) también se hace con `resample_poly`, calculando la fracción
   exacta `up/down` con `fractions.Fraction`.
 
-## Script
+## Scripts
 
-Todo el proceso descripto en este documento está implementado en
-[`tools/generate_samples.py`](../tools/generate_samples.py). Dependencias:
-`numpy`, `scipy`, `soundfile` (`pip install numpy scipy soundfile`).
+Hay dos, con roles distintos:
 
-La verificación de tono por autocorrelación (para mapear archivo → nota)
-fue un paso exploratorio de una sola vez, hecho con un script ad-hoc fuera
-del repositorio; no forma parte del pipeline reproducible porque es un paso
-de calibración manual sobre una librería de audio externa, no algo que deba
-correr cada vez que se regeneran las notas.
+- [`tools/generate_samples.py`](../tools/generate_samples.py) — **el
+  pipeline**. Todo el procesamiento descripto en este documento (carga,
+  recorte, resampleo, cuantización, emisión del header). Es lo que se corre
+  cada vez que se regeneran las notas.
+- [`tools/detect_pitch.py`](../tools/detect_pitch.py) — **calibración**. El
+  detector de tono por autocorrelación con el que se mapea archivo → nota.
+  No forma parte del pipeline (no hay que correrlo al regenerar), pero es
+  el primer paso obligado si se cambia la fuente de muestras — por ejemplo
+  si el pendiente de licencia obliga a reemplazar "Lyre Lyre" — porque los
+  nombres de archivo de una librería nueva no son confiables hasta
+  verificarlos. Originalmente fue un script ad-hoc que no se guardó; se
+  reconstruyó y validó contra los 8 archivos de la tabla de arriba
+  (coincidencia exacta de nota y octava en los 8) justamente para no
+  tener que re-derivarlo cuando haga falta.
+
+Dependencias de ambos: `numpy`, `scipy`, `soundfile`
+(`pip install numpy scipy soundfile`).
