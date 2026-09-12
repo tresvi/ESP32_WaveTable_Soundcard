@@ -272,11 +272,17 @@ cablear botones físicos en el ESP32).
   eléctrica, y el filtro de caracteres válidos ya la absorbe (ver más abajo).
 - **Baudrate: 57600** (`UART_BAUD`), y tiene que coincidir con el
   `Serial1.begin()` del Pro Micro. La primera versión usaba 115200; se bajó
-  a 57600 en el commit `ecb8d3d`. **El motivo del cambio no quedó
-  registrado** — si fue por fallas a 115200 a través del divisor resistivo
-  (plausible: el divisor más la capacidad del pin forman un RC que redondea
-  los flancos), conviene anotarlo acá, porque condiciona hasta dónde se
-  puede subir el baudrate en el futuro.
+  a 57600 en el commit `ecb8d3d` **por robustez**: la línea de transmisión
+  es muy básica (cables sueltos + divisor resistivo, sin blindaje ni
+  impedancia controlada), y a menor baudrate cada bit dura el doble, lo
+  que da más margen frente al redondeo de flancos que introduce el RC del
+  divisor con la capacidad del pin, y frente al ruido acoplado. No es que
+  115200 fallara de forma demostrada — es una decisión de margen. El
+  protocolo es de un byte por evento, así que 57600 (~5.760 bytes/s) sigue
+  siendo miles de veces más de lo necesario. Si en algún momento hiciera
+  falta más velocidad, antes de subir el baudrate conviene mejorar la línea
+  (cable corto, par trenzado con GND, o un level-shifter activo en vez del
+  divisor).
 - **Puerto**: los comandos se aceptan por **dos** UARTs a la vez —
   `Serial2` (UART2, RX en **GPIO 21**, el enlace real con el Pro Micro) y
   también `Serial` (UART0, el mismo puerto USB que ya se usa para
