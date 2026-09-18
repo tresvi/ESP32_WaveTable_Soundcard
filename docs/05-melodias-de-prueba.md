@@ -213,6 +213,24 @@ Rango C4–G4. Ver la tabla de "Qué se puede y qué no" arriba.
 
 Completo arrancando en G3 (necesita F4, índice 17). Rango G3–G4.
 
+### Fuera de alcance incluso con 21 notas
+
+El set de 21 es **una sola tonalidad completa** (Do mayor / La menor
+natural, teclas blancas). El criterio para saber si una pieza entra: ¿se
+puede tocar la melodía sólo en teclas blancas, en alguna transposición, sin
+que suene mal? Si necesita teclas negras para su carácter, no entra.
+Evaluadas y descartadas:
+
+| Pieza | Por qué no |
+|---|---|
+| **Concierto de Aranjuez** (Rodrigo, Adagio) | Si menor **armónico**: la sensible elevada (G# en La menor) es la nota de la cadencia andaluza que define el sonido español — sacarla no es una sustitución menor. Además modula y la cadenza es cromática. |
+| **Tico-Tico no Fubá** (Zequinha de Abreu) | Choro: cromatismo estructural (notas de paso en semitonos como lenguaje base), y rondó A–B–A–C–A con cambio de tonalidad entre secciones. Falla en las dos condiciones. |
+
+Por género: suelen entrar canciones infantiles, folk, himnos, villancicos y
+*temas* clásicos simples; suelen no entrar música española/flamenca
+(Frigio, cadencia andaluza), choro, jazz, bossa, tango, y cualquier pieza
+entera que module.
+
 ## Reproducción automática con ritmo (caracter `' '`)
 
 Mandar un **espacio** por cualquiera de los dos UARTs reproduce "Mañana"
