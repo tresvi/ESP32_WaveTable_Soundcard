@@ -14,7 +14,7 @@ Esto descarta de entrada dos melodías que son las primeras que uno intenta:
 
 | Melodía | Por qué no entra |
 |---|---|
-| Feliz Cumpleaños | Necesita el 4º grado (F en tonalidad de C) y además un B♭ |
+| Feliz Cumpleaños | Necesita el 4º grado (F en tonalidad de C). *(Arrancada en Sol es 100 % diatónica en Do mayor: `G G A G C B \| G G A G D C \| G G G' E C B A \| F F E C D C`; una versión anterior de esta tabla mencionaba también un B♭, pero eso sólo aplica si se arranca en Do, que la pone en Fa mayor.)* |
 | Himno a la Alegría (Beethoven) | Necesita el 4º grado (F) |
 
 **No se arregla transponiendo.** El Himno a la Alegría usa 5 grados
