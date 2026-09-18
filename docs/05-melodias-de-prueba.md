@@ -159,6 +159,60 @@ paso sirve para verificar el salto al banco agudo.
 > y suena consonante. Las frases están numeradas justamente para poder
 > corregirlas de a una al escucharlas.
 
+## Pendientes del set ampliado (21 notas)
+
+Si se agregan las 6 notas diatónicas faltantes como región 15–20
+(`F3 B3 F4 B4 F5 B5`, sin tocar los índices 0–14 — ver la discusión en
+[04](04-firmware-primera-version.md)), estas piezas pasan a ser codificables.
+Chars propuestos para la región nueva: `'F'`–`'K'` (15–20), continuando la
+secuencia actual.
+
+### Grieg — "En la gruta del rey de la montaña" (Peer Gynt)
+
+Tema principal transpuesto a **La menor natural** (mismas teclas blancas que
+Do mayor). Hallazgo: de las notas que usa, **sólo B3 falta en el catálogo
+actual** — A3, C4, D4, E4, G4 y A4 ya existen. Con B3 solo (índice 15,
+grabación directa en Lyre Lyre) el tema se destraba.
+
+| # | Frase | Notas | Chars (B3 = `F`) |
+|---|---|---|---|
+| 1 | tema | A3 B3 C4 D4 E4 C4 E4 | `4F56757` |
+| 2 | respuesta cromática *(ver nota)* | E4 B3 E4 · D4 A3 D4 | `7F7646` |
+| 3 | tema, cierre arriba | A3 B3 C4 D4 E4 C4 E4 A4 | `4F567579` |
+| 4 | remate en la ♭7 | G4 E4 C4 E4 G4 | `87578` |
+
+**Nota sobre la frase 2**: en el original las dos primeras notas son **E♭4**
+(la ♭5, el tritono que da el carácter siniestro). Es una nota cromática y
+no hay transposición que la ponga en tecla blanca — el único tritono
+blanco-blanco es B–F, y Si menor tiene C# y F#. Se sustituye por E4 (la 5ª
+justa): conserva el contorno, pierde la tensión.
+
+**Accelerando**: es la seña de identidad de la pieza y el formato
+`{nota, delay_ms}` lo permite directamente — repetir el tema bajando el
+pulso en cada vuelta, las últimas una octava arriba:
+
+| Vuelta | Negra (ms) | Octava | Necesita además |
+|---|---|---|---|
+| 1 | 400 | A3–A4 | B3 |
+| 2 | 320 | A3–A4 | B3 |
+| 3 | 250 | A4–A5 | B4 (índice 18) |
+| 4 | 180 | A4–A5 | B4 |
+
+**Crescendo: no codificable.** El mezclador no tiene velocidad por nota
+(cada muestra suena a su pico fijo de ±2048). Es la otra mitad del drama de
+esta pieza y se pierde. Agregar un campo de ganancia a `melody_step_t` y
+un multiplicador en `mix_block()` sería barato en CPU, pero es una feature
+nueva, no una transcripción.
+
+### Beethoven — Himno a la Alegría
+
+Completo y sin sustituciones con el set de 21 (necesita F4, índice 17).
+Rango C4–G4. Ver la tabla de "Qué se puede y qué no" arriba.
+
+### Feliz Cumpleaños
+
+Completo arrancando en G3 (necesita F4, índice 17). Rango G3–G4.
+
 ## Reproducción automática con ritmo (caracter `' '`)
 
 Mandar un **espacio** por cualquiera de los dos UARTs reproduce "Mañana"
